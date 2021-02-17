@@ -139,14 +139,26 @@ runSettingsSocket set socket app = do
     runSettingsConnection set getConn app
   where
     getConn = do
+      (s, sa) <- mkSocket
+      -- Trying to work around 
+      E.handleJust
+        (\e -> if ioeGetErrorType e == ResourceVanished
+           then Just e
+           else Nothing)
+        (\e -> close s >> throwIO e)
+        (setSocketConnection (s, sa))
+
+    mkSocket = do
 #if WINDOWS
-        (s, sa) <- windowsThreadBlockHack $ accept socket
+        windowsThreadBlockHack $ accept socket
 #else
-        (s, sa) <- accept socket
+        accept socket
 #endif
+
+    setSocketConnection (s, sa) = do    
         setSocketCloseOnExec s
         -- NoDelay causes an error for AF_UNIX.
-        setSocketOption s NoDelay 1 `E.catch` \(E.SomeException _) -> return ()
+        setSocketOption s NoDelay 1
         conn <- socketConnection set s
         return (conn, sa)
 
